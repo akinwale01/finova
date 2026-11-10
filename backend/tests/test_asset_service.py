@@ -1,15 +1,15 @@
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from app.exceptions.common import (
+from backend.app.exceptions.common import (
     ConflictError,
     FinovaError,
     NotFoundError,
     ValidationError,
 )
-from app.models.asset import Asset
-from app.schemas.asset import AssetCreate, AssetUpdate
-from app.services.asset_service import AssetService
+from backend.app.models.asset import Asset
+from backend.app.schemas.asset import AssetCreate, AssetUpdate
+from backend.app.services.asset_service import AssetService
 
 
 # ---------------------------------------------------------------------------

@@ -2,7 +2,7 @@
 Common application exceptions used by Finova services.
 """
 
-from app.exceptions.base import FinovaError
+from backend.app.exceptions.base import FinovaError
 
 
 class NotFoundError(FinovaError):

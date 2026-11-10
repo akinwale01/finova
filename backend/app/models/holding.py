@@ -1,5 +1,6 @@
 from enum import Enum
 
+from backend.app.database.connection import Base
 from sqlalchemy import (
     CheckConstraint,
     Column,
@@ -13,33 +14,16 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 
-from app.database.connection import Base
-
-
 # ============================================================
 # ENUMS
 # ============================================================
 
 
 class HoldingValuationMethod(str, Enum):
-    """
-    Defines how Finova determines the current value of a holding.
-
-    MARKET_PRICE:
-        Current value is based on a live/current market price
-        obtained from the market-data layer.
-
-    USER_VALUED:
-        Current value is manually supplied by the user.
-
-    CALCULATED:
-        Current value is derived from another deterministic
-        valuation method.
-    """
+    """How Finova obtains a holding's current valuation."""
 
     MARKET_PRICE = "MARKET_PRICE"
     USER_VALUED = "USER_VALUED"
-    CALCULATED = "CALCULATED"
 
 
 # ============================================================
@@ -49,67 +33,34 @@ class HoldingValuationMethod(str, Enum):
 
 class Holding(Base):
     """
-    Represents the current ownership position of an asset
-    inside a portfolio.
+    Represents the current position in an asset within a portfolio.
 
-    A Holding answers:
+    Asset defines the canonical identity and measurement unit.
+    Holding records the quantity owned in that canonical unit.
 
-        "How much of this asset does this portfolio currently own?"
+    For example:
+        Asset.unit = "GRAM"
+        Holding.quantity = 500
 
-    The Asset model describes WHAT the asset is.
+    If a user enters 0.5 kilograms, the unit-conversion layer
+    must convert that quantity to 500 grams before updating
+    the Holding.
 
-    The Holding model describes:
-        - how much is currently owned
-        - historical acquisition/cost-basis information
-        - current valuation information
+    Historical acquisition information and current valuation
+    are deliberately stored separately.
 
-    IMPORTANT ARCHITECTURAL RULE:
-
-        Historical acquisition data
-            MUST NOT be overwritten by market-price changes.
-
-        Current valuation
-            MAY change whenever market data changes.
-
-    Therefore:
-
-        Cost basis
-            = historical acquisition information
-
-        Current value
-            = current quantity × current valuation price
-              with currency conversion when required
-
-        Unrealized P/L
-            = current value - cost basis
-
-    Transactions remain the historical source of individual
-    financial events.
-
-    Holding is the current aggregate position derived from
-    those events.
+    Quantity and cost basis are maintained by transaction
+    processing or controlled opening-balance/import workflows.
     """
 
     __tablename__ = "holdings"
 
-    # =========================================================
-    # DATABASE CONSTRAINTS / INDEXES
-    # =========================================================
+    # ========================================================
+    # INDEXES AND DATABASE CONSTRAINTS
+    # ========================================================
 
     __table_args__ = (
-
-        # -----------------------------------------------------
-        # A portfolio should have one canonical Holding for
-        # each Asset.
-        #
-        # Example:
-        #
-        # Portfolio A + AAPL
-        #     -> one Holding
-        #
-        # Additional purchases increase quantity/cost basis
-        # rather than creating another Holding row.
-        # -----------------------------------------------------
+        # One position per asset in each portfolio.
         Index(
             "uq_holdings_portfolio_asset",
             "portfolio_id",
@@ -117,53 +68,27 @@ class Holding(Base):
             unique=True,
         ),
 
-        # -----------------------------------------------------
-        # Fast lookup of holdings belonging to a portfolio.
-        # -----------------------------------------------------
-        Index(
-            "ix_holdings_portfolio_id",
-            "portfolio_id",
-        ),
-
-        # -----------------------------------------------------
-        # Fast lookup of portfolios holding an asset.
-        # -----------------------------------------------------
+        # Supports lookups of portfolios holding a particular asset.
         Index(
             "ix_holdings_asset_id",
             "asset_id",
         ),
 
-        # -----------------------------------------------------
-        # Quantity cannot be negative.
-        #
-        # A SELL that completely disposes of a position should
-        # reduce quantity to zero rather than create a negative
-        # Holding.
-        # -----------------------------------------------------
         CheckConstraint(
             "quantity >= 0",
             name="ck_holdings_quantity_non_negative",
         ),
 
-        # -----------------------------------------------------
-        # Historical total cost basis cannot be negative.
-        # -----------------------------------------------------
         CheckConstraint(
             "total_cost_basis >= 0",
             name="ck_holdings_total_cost_basis_non_negative",
         ),
 
-        # -----------------------------------------------------
-        # Average acquisition cost cannot be negative.
-        # -----------------------------------------------------
         CheckConstraint(
             "cost_basis_per_unit >= 0",
             name="ck_holdings_cost_basis_per_unit_non_negative",
         ),
 
-        # -----------------------------------------------------
-        # Current valuation cannot be negative.
-        # -----------------------------------------------------
         CheckConstraint(
             "current_unit_price IS NULL OR current_unit_price >= 0",
             name="ck_holdings_current_unit_price_non_negative",
@@ -174,10 +99,6 @@ class Holding(Base):
             name="ck_holdings_current_total_value_non_negative",
         ),
 
-        # -----------------------------------------------------
-        # Ownership percentage, when applicable, must be
-        # between 0 and 100.
-        # -----------------------------------------------------
         CheckConstraint(
             """
             ownership_percentage IS NULL
@@ -188,23 +109,39 @@ class Holding(Base):
             """,
             name="ck_holdings_ownership_percentage_range",
         ),
+
+        # Only valuation methods currently supported by Finova.
+        CheckConstraint(
+            "valuation_method IN ('MARKET_PRICE', 'USER_VALUED')",
+            name="ck_holdings_valuation_method",
+        ),
+
+        # A stored valuation amount must have an associated currency.
+        CheckConstraint(
+            """
+            (
+                current_unit_price IS NULL
+                AND current_total_value IS NULL
+            )
+            OR valuation_currency IS NOT NULL
+            """,
+            name="ck_holdings_valuation_currency_required",
+        ),
     )
 
-    # =========================================================
+    # ========================================================
     # PRIMARY KEY
-    # =========================================================
+    # ========================================================
 
     id = Column(
         Integer,
         primary_key=True,
-        index=True,
     )
 
-    # =========================================================
-    # PORTFOLIO
-    # =========================================================
+    # ========================================================
+    # PORTFOLIO AND ASSET
+    # ========================================================
 
-    # Portfolio currently containing this holding.
     portfolio_id = Column(
         Integer,
         ForeignKey(
@@ -214,11 +151,6 @@ class Holding(Base):
         nullable=False,
     )
 
-    # =========================================================
-    # ASSET
-    # =========================================================
-
-    # Canonical asset represented by this holding.
     asset_id = Column(
         Integer,
         ForeignKey(
@@ -228,83 +160,39 @@ class Holding(Base):
         nullable=False,
     )
 
-    # =========================================================
-    # CURRENT OWNERSHIP
-    # =========================================================
+    # ========================================================
+    # CURRENT POSITION
+    # ========================================================
 
-    # Current quantity owned by the portfolio.
+    # Always expressed in the canonical unit defined by Asset.unit.
     #
-    # Examples:
-    #
-    #     AAPL -> 25.00000000 shares
-    #     BTC  -> 0.50000000 BTC
-    #     Gold -> 500.00000000 grams
-    #
-    # This value represents the CURRENT position, not the
-    # original acquisition quantity.
+    # This is the current position, not the original purchase quantity.
     quantity = Column(
         Numeric(20, 8),
         nullable=False,
     )
 
-    # Unit corresponding to quantity.
-    #
-    # Examples:
-    #
-    #     SHARE
-    #     BTC
-    #     ETH
-    #     GRAM
-    #     UNIT
-    unit = Column(
-        String(30),
-        nullable=False,
-    )
-
-    # =========================================================
+    # ========================================================
     # OWNERSHIP-BASED ASSETS
-    # =========================================================
+    # ========================================================
 
-    # Percentage ownership for assets such as:
+    # Relevant to businesses, partnerships, and similar assets.
     #
-    #     private businesses
-    #     partnerships
-    #     private companies
-    #
-    # Example:
-    #
-    #     quantity = 1
-    #     ownership_percentage = 25
-    #
-    # means the user owns 25% of the represented business.
+    # This is separate from quantity. For example, a holding
+    # may represent one business with a 25% ownership interest.
     ownership_percentage = Column(
         Numeric(7, 4),
         nullable=True,
     )
 
-    # =========================================================
+    # ========================================================
     # HISTORICAL COST BASIS
-    # =========================================================
+    # ========================================================
 
-    # Total historical acquisition cost currently represented
-    # by the holding.
+    # Remaining historical acquisition cost represented by
+    # the current position.
     #
-    # IMPORTANT:
-    #
-    # This is NOT the current market value.
-    #
-    # It must NOT change merely because the market price changes.
-    #
-    # Example:
-    #
-    #     Bought 10 AAPL for $1,800
-    #
-    #     total_cost_basis = $1,800
-    #
-    # If AAPL later becomes $2,100:
-    #
-    #     total_cost_basis remains $1,800
-    #     current_total_value becomes $2,100
+    # Market-price changes must never modify this field.
     total_cost_basis = Column(
         Numeric(20, 8),
         nullable=False,
@@ -312,13 +200,9 @@ class Holding(Base):
         server_default="0",
     )
 
-    # Historical average acquisition cost per currently held
-    # unit.
+    # Average historical acquisition cost per canonical unit.
     #
-    # This is derived from historical transaction activity and
-    # cost-basis rules.
-    #
-    # It is NOT the current market price.
+    # Maintained by transaction/position processing.
     cost_basis_per_unit = Column(
         Numeric(20, 8),
         nullable=False,
@@ -326,104 +210,58 @@ class Holding(Base):
         server_default="0",
     )
 
-    # Currency in which the historical cost basis is recorded.
-    #
-    # Examples:
-    #
-    #     USD
-    #     NGN
-    #     EUR
     cost_basis_currency = Column(
         String(3),
         nullable=False,
     )
 
-    # =========================================================
+    # ========================================================
     # CURRENT VALUATION
-    # =========================================================
+    # ========================================================
 
-    # Defines how Finova obtains the current valuation.
     valuation_method = Column(
         String(30),
         nullable=False,
-        default=HoldingValuationMethod.MARKET_PRICE.value,
-        server_default=HoldingValuationMethod.MARKET_PRICE.value,
     )
 
-    # Current price/value of one unit.
-    #
-    # IMPORTANT:
-    #
-    # This is LIVE/REFERENCE valuation data.
-    #
-    # It must NEVER overwrite:
-    #
-    #     total_cost_basis
-    #     cost_basis_per_unit
-    #
-    # Example:
-    #
-    #     Historical acquisition price = $180
-    #     Current market price         = $215
-    #
-    #     cost_basis_per_unit          = $180
-    #     current_unit_price           = $215
+    # Current value of one canonical unit.
     current_unit_price = Column(
         Numeric(20, 8),
         nullable=True,
     )
 
-    # Current total market/user-calculated value.
+    # Current total valuation snapshot.
     #
-    # Normally:
+    # For a unit-priced asset, this is normally:
+    # quantity × current_unit_price.
     #
-    #     quantity × current_unit_price
-    #
-    # Currency conversion may be applied by the valuation
-    # service when the asset and portfolio currencies differ.
-    #
-    # This value is a CURRENT VALUATION SNAPSHOT.
-    #
-    # It is NOT historical acquisition value.
+    # Currency conversion and valuation policy belong to the
+    # valuation layer, not to this database model.
     current_total_value = Column(
         Numeric(20, 8),
         nullable=True,
     )
 
-    # Currency of the current valuation.
-    #
-    # This may differ from cost_basis_currency.
-    #
-    # Example:
-    #
-    #     Cost basis = NGN
-    #     Current valuation = USD
-    #
-    # The valuation layer is responsible for currency conversion
-    # when required.
     valuation_currency = Column(
         String(3),
         nullable=True,
     )
 
-    # Time at which the current valuation was obtained.
     price_updated_at = Column(
         DateTime(timezone=True),
         nullable=True,
     )
 
-    # =========================================================
+    # ========================================================
     # RECORD TIMESTAMPS
-    # =========================================================
+    # ========================================================
 
-    # When the Holding record was created.
     created_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
     )
 
-    # When the Holding record was last modified.
     updated_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -431,17 +269,15 @@ class Holding(Base):
         nullable=False,
     )
 
-    # =========================================================
+    # ========================================================
     # RELATIONSHIPS
-    # =========================================================
+    # ========================================================
 
-    # Portfolio containing this holding.
     portfolio = relationship(
         "Portfolio",
         back_populates="holdings",
     )
 
-    # Canonical asset represented by this holding.
     asset = relationship(
         "Asset",
         back_populates="holdings",

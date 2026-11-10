@@ -10,7 +10,7 @@ from pydantic import (
     model_validator,
 )
 
-from app.models.transaction import (
+from backend.app.models.transaction import (
     TransactionStatus,
     TransactionType,
 )

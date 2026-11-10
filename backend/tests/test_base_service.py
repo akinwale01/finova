@@ -5,8 +5,8 @@ from sqlalchemy import Column, Integer, String, create_engine
 from sqlalchemy.orm import Session, declarative_base
 from sqlalchemy.pool import StaticPool
 
-from app.exceptions import FinovaError, NotFoundError
-from app.services.base_service import BaseService
+from backend.app.exceptions import FinovaError, NotFoundError
+from backend.app.services.base_service import BaseService
 
 
 # ============================================================
@@ -14,6 +14,7 @@ from app.services.base_service import BaseService
 # ============================================================
 
 TestBase = declarative_base()
+TestBase.__test__ = False
 
 
 class DummyModel(TestBase):

@@ -1,16 +1,16 @@
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.models.portfolio import Portfolio
-from app.schemas.portfolio import PortfolioCreate, PortfolioUpdate
-from app.services.base_service import BaseService
-from app.exceptions.common import (
+from backend.app.models.portfolio import Portfolio
+from backend.app.schemas.portfolio import PortfolioCreate, PortfolioUpdate
+from backend.app.services.base_service import BaseService
+from backend.app.exceptions import (
     ConflictError,
     FinovaError,
     NotFoundError,
     ValidationError,
 )
-from app.models.user import User
+from backend.app.models.user import User
 
 
 class PortfolioService(BaseService[Portfolio]):

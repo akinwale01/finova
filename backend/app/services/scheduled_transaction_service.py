@@ -7,27 +7,27 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.exceptions.common import (
+from backend.app.exceptions.common import (
     ConflictError,
     FinovaError,
     NotFoundError,
     ValidationError,
 )
-from app.models.account import Account
-from app.models.asset import Asset
-from app.models.portfolio import Portfolio
-from app.models.scheduled_transaction import (
+from backend.app.models.account import Account
+from backend.app.models.asset import Asset
+from backend.app.models.portfolio import Portfolio
+from backend.app.models.scheduled_transaction import (
     RecurrenceType,
     ScheduledTransaction,
     ScheduledTransactionExecutionMode,
     ScheduledTransactionStatus,
     ScheduledTransactionType,
 )
-from app.schemas.scheduled_transaction import (
+from backend.app.schemas.scheduled_transaction import (
     ScheduledTransactionCreate,
     ScheduledTransactionUpdate,
 )
-from app.services.base_service import BaseService
+from backend.app.services.base_service import BaseService
 
 
 class ScheduledTransactionService(BaseService[ScheduledTransaction]):

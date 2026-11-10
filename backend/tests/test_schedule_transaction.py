@@ -4,13 +4,13 @@ from decimal import Decimal
 import pytest
 from pydantic import ValidationError
 
-from app.models.scheduled_transaction import (
+from backend.app.models.scheduled_transaction import (
     RecurrenceType,
     ScheduledTransactionExecutionMode,
     ScheduledTransactionStatus,
     ScheduledTransactionType,
 )
-from app.schemas.scheduled_transaction import (
+from backend.app.schemas.scheduled_transaction import (
     ScheduledTransactionCreate,
     ScheduledTransactionResponse,
     ScheduledTransactionSummary,
@@ -258,12 +258,16 @@ def test_buy_and_sell_require_asset(scheduled_type):
 def test_quantity_requires_asset():
     with pytest.raises(
         ValidationError,
-        match="quantity cannot be specified without asset_id",
+        match="asset_id is required for BUY and SELL schedules",
     ):
         ScheduledTransactionCreate(
-            **make_valid_deposit(
+            **make_valid_buy(
+                execution_mode=ScheduledTransactionExecutionMode.QUANTITY,
+                amount=None,
+                asset_id=None,
                 quantity=Decimal("2"),
                 unit="SHARE",
+                unit_price=None,
             )
         )
 

@@ -1,5 +1,6 @@
 from enum import Enum
 
+from backend.app.database.connection import Base
 from sqlalchemy import (
     Column,
     DateTime,
@@ -12,8 +13,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-
-from app.database.connection import Base
 
 
 class TransactionType(str, Enum):

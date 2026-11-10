@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Callable
 
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.exceptions import (
+from backend.app.exceptions import (
     AuthorizationError,
     BusinessRuleError,
     ConflictError,
@@ -16,14 +16,14 @@ from app.exceptions import (
     NotFoundError,
     ValidationError,
 )
-from app.models.user import User
-from app.schemas.user import (
+from backend.app.models.user import User
+from backend.app.schemas.user import (
     PasswordChange,
     PasswordResetConfirm,
     UserCreate,
     UserUpdate,
 )
-from app.services.base_service import BaseService
+from backend.app.services.base_service import BaseService
 
 
 class UserService(BaseService[User]):
@@ -759,7 +759,7 @@ class UserService(BaseService[User]):
             ) from exc
 
     @staticmethod
-    def _hash_reset_token(token: str) -> str:
+    def _hash_reset_token(token: object) -> str:
         """
         SHA-256 hash a password-reset token before persistence.
 

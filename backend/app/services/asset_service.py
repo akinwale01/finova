@@ -1,15 +1,15 @@
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.exceptions.common import (
+from backend.app.exceptions import (
     ConflictError,
     FinovaError,
     NotFoundError,
     ValidationError,
 )
-from app.models.asset import Asset
-from app.schemas.asset import AssetCreate, AssetUpdate
-from app.services.base_service import BaseService
+from backend.app.models.asset import Asset
+from backend.app.schemas.asset import AssetCreate, AssetUpdate
+from backend.app.services.base_service import BaseService
 
 
 class AssetService(BaseService[Asset]):
@@ -355,7 +355,7 @@ class AssetService(BaseService[Asset]):
         """
         asset = self.require_asset(asset_id)
 
-        if require_active and not asset.is_active:
+        if require_active and asset.is_active is False:
             raise ValidationError(
                 f"Asset '{asset.name}' is inactive."
             )
@@ -380,10 +380,10 @@ class AssetService(BaseService[Asset]):
         """
         asset = self.require_asset(asset_id)
 
-        if not asset.is_active:
+        if not getattr(asset, "is_active", False):
             return asset
 
-        asset.is_active = False
+        setattr(asset, "is_active", False)
 
         try:
             self.db.flush()
@@ -415,10 +415,10 @@ class AssetService(BaseService[Asset]):
         """
         asset = self.require_asset(asset_id)
 
-        if asset.is_active:
+        if bool(asset.is_active):
             return asset
 
-        asset.is_active = True
+        setattr(asset, "is_active", True)
 
         try:
             self.db.flush()
@@ -427,8 +427,7 @@ class AssetService(BaseService[Asset]):
             self.db.rollback()
 
             raise ConflictError(
-                "The asset cannot be activated because an active "
-                "asset with the same canonical identity already exists."
+                "The asset cannot be activated because an active asset with the same canonical identity already exists."
             ) from exc
 
         except SQLAlchemyError as exc:

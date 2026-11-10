@@ -1,16 +1,37 @@
-from decimal import Decimal
 from datetime import datetime, timezone
+from decimal import Decimal
 
 import pytest
-from pydantic import ValidationError
-
-from app.schemas.holding import (
+from backend.app.schemas.holding import (
     HoldingCreate,
     HoldingListResponse,
     HoldingRead,
     HoldingUpdate,
+    HoldingValuationUpdate,
     ValuationMethod,
 )
+from pydantic import ValidationError
+
+# ============================================================
+# TEST DATA
+# ============================================================
+
+
+def valid_holding_create_data() -> dict[str, int | str]:
+    """Return valid data for creating an initial holding position."""
+
+    return {
+        "portfolio_id": 1,
+        "asset_id": 1,
+        "quantity": "10.00000000",
+        "total_cost_basis": "1500.00000000",
+        "cost_basis_per_unit": "150.00000000",
+        "cost_basis_currency": "USD",
+        "valuation_method": "MARKET_PRICE",
+        "current_unit_price": "175.00000000",
+        "current_total_value": "1750.00000000",
+        "valuation_currency": "USD",
+    }
 
 
 # ============================================================
@@ -18,29 +39,12 @@ from app.schemas.holding import (
 # ============================================================
 
 
-def valid_holding_create_data() -> dict:
-    return {
-        "portfolio_id": 1,
-        "asset_id": 1,
-        "quantity": "10.00000000",
-        "unit": "shares",
-        "total_cost_basis": "1500.00000000",
-        "cost_basis_per_unit": "150.00000000",
-        "cost_basis_currency": "usd",
-        "valuation_method": "market_price",
-        "current_unit_price": "175.00000000",
-        "current_total_value": "1750.00000000",
-        "valuation_currency": "usd",
-    }
-
-
-def test_holding_create_valid():
+def test_holding_create_valid() -> None:
     holding = HoldingCreate(**valid_holding_create_data())
 
     assert holding.portfolio_id == 1
     assert holding.asset_id == 1
     assert holding.quantity == Decimal("10.00000000")
-    assert holding.unit == "shares"
 
     assert holding.total_cost_basis == Decimal("1500.00000000")
     assert holding.cost_basis_per_unit == Decimal("150.00000000")
@@ -51,9 +55,8 @@ def test_holding_create_valid():
     assert holding.valuation_method == ValuationMethod.MARKET_PRICE
 
 
-def test_holding_create_normalizes_currency():
+def test_holding_create_normalizes_currency() -> None:
     data = valid_holding_create_data()
-
     data["cost_basis_currency"] = " ngn "
     data["valuation_currency"] = " usd "
 
@@ -63,31 +66,20 @@ def test_holding_create_normalizes_currency():
     assert holding.valuation_currency == "USD"
 
 
-def test_holding_create_rejects_zero_portfolio_id():
+@pytest.mark.parametrize("field", ["portfolio_id", "asset_id"])
+@pytest.mark.parametrize("invalid_id", [0, -1])
+def test_holding_create_rejects_invalid_ids(
+    field: str,
+    invalid_id: int,
+) -> None:
     data = valid_holding_create_data()
-    data["portfolio_id"] = 0
+    data[field] = invalid_id
 
     with pytest.raises(ValidationError):
         HoldingCreate(**data)
 
 
-def test_holding_create_rejects_negative_portfolio_id():
-    data = valid_holding_create_data()
-    data["portfolio_id"] = -1
-
-    with pytest.raises(ValidationError):
-        HoldingCreate(**data)
-
-
-def test_holding_create_rejects_zero_asset_id():
-    data = valid_holding_create_data()
-    data["asset_id"] = 0
-
-    with pytest.raises(ValidationError):
-        HoldingCreate(**data)
-
-
-def test_holding_create_rejects_negative_quantity():
+def test_holding_create_rejects_negative_quantity() -> None:
     data = valid_holding_create_data()
     data["quantity"] = "-1"
 
@@ -95,16 +87,15 @@ def test_holding_create_rejects_negative_quantity():
         HoldingCreate(**data)
 
 
-def test_holding_create_allows_zero_quantity():
+def test_holding_create_rejects_zero_quantity() -> None:
     data = valid_holding_create_data()
     data["quantity"] = "0"
 
-    holding = HoldingCreate(**data)
+    with pytest.raises(ValidationError):
+        HoldingCreate(**data)
 
-    assert holding.quantity == Decimal("0")
 
-
-def test_holding_create_rejects_negative_cost_basis():
+def test_holding_create_rejects_negative_cost_basis() -> None:
     data = valid_holding_create_data()
     data["total_cost_basis"] = "-100"
 
@@ -112,7 +103,7 @@ def test_holding_create_rejects_negative_cost_basis():
         HoldingCreate(**data)
 
 
-def test_holding_create_rejects_negative_cost_basis_per_unit():
+def test_holding_create_rejects_negative_cost_basis_per_unit() -> None:
     data = valid_holding_create_data()
     data["cost_basis_per_unit"] = "-10"
 
@@ -120,17 +111,23 @@ def test_holding_create_rejects_negative_cost_basis_per_unit():
         HoldingCreate(**data)
 
 
-def test_holding_create_rejects_invalid_cost_basis_currency():
+@pytest.mark.parametrize(
+    "currency",
+    ["US", "123", "", "USDD"],
+)
+def test_holding_create_rejects_invalid_cost_basis_currency(
+    currency: str,
+) -> None:
     data = valid_holding_create_data()
-    data["cost_basis_currency"] = "US"
+    data["cost_basis_currency"] = currency
 
     with pytest.raises(ValidationError):
         HoldingCreate(**data)
 
 
-def test_holding_create_rejects_numeric_currency():
+def test_holding_create_rejects_inconsistent_cost_basis() -> None:
     data = valid_holding_create_data()
-    data["cost_basis_currency"] = "123"
+    data["cost_basis_per_unit"] = "200"
 
     with pytest.raises(ValidationError):
         HoldingCreate(**data)
@@ -141,57 +138,47 @@ def test_holding_create_rejects_numeric_currency():
 # ============================================================
 
 
-def test_holding_create_accepts_valid_ownership_percentage():
+@pytest.mark.parametrize(
+    ("percentage", "expected"),
+    [
+        ("25.5000", Decimal("25.5000")),
+        ("0", Decimal(0)),
+        ("100", Decimal(100)),
+    ],
+)
+def test_holding_create_accepts_valid_ownership_percentage(
+    percentage: str,
+    expected: Decimal,
+) -> None:
     data = valid_holding_create_data()
-    data["ownership_percentage"] = "25.5000"
+    data["ownership_percentage"] = percentage
 
     holding = HoldingCreate(**data)
 
-    assert holding.ownership_percentage == Decimal("25.5000")
+    assert holding.ownership_percentage == expected
 
 
-def test_holding_create_accepts_zero_ownership_percentage():
+@pytest.mark.parametrize(
+    "percentage",
+    ["100.0001", "-0.01"],
+)
+def test_holding_create_rejects_invalid_ownership_percentage(
+    percentage: str,
+) -> None:
     data = valid_holding_create_data()
-    data["ownership_percentage"] = "0"
-
-    holding = HoldingCreate(**data)
-
-    assert holding.ownership_percentage == Decimal("0")
-
-
-def test_holding_create_accepts_100_ownership_percentage():
-    data = valid_holding_create_data()
-    data["ownership_percentage"] = "100"
-
-    holding = HoldingCreate(**data)
-
-    assert holding.ownership_percentage == Decimal("100")
-
-
-def test_holding_create_rejects_ownership_above_100():
-    data = valid_holding_create_data()
-    data["ownership_percentage"] = "100.0001"
-
-    with pytest.raises(ValidationError):
-        HoldingCreate(**data)
-
-
-def test_holding_create_rejects_negative_ownership():
-    data = valid_holding_create_data()
-    data["ownership_percentage"] = "-0.01"
+    data["ownership_percentage"] = percentage
 
     with pytest.raises(ValidationError):
         HoldingCreate(**data)
 
 
 # ============================================================
-# VALUATION
+# HOLDING CREATE VALUATION
 # ============================================================
 
 
-def test_holding_create_allows_missing_current_valuation():
+def test_holding_create_allows_missing_current_valuation() -> None:
     data = valid_holding_create_data()
-
     data["current_unit_price"] = None
     data["current_total_value"] = None
     data["valuation_currency"] = None
@@ -203,80 +190,66 @@ def test_holding_create_allows_missing_current_valuation():
     assert holding.valuation_currency is None
 
 
-def test_holding_create_requires_currency_for_unit_price():
+@pytest.mark.parametrize(
+    ("price_field", "price_value"),
+    [
+        ("current_unit_price", "100"),
+        ("current_total_value", "1000"),
+    ],
+)
+def test_holding_create_requires_currency_for_valuation(
+    price_field: str,
+    price_value: str,
+) -> None:
     data = valid_holding_create_data()
-
-    data["current_unit_price"] = "100"
+    data[price_field] = price_value
     data["valuation_currency"] = None
 
     with pytest.raises(ValidationError):
         HoldingCreate(**data)
 
 
-def test_holding_create_requires_currency_for_total_value():
+@pytest.mark.parametrize(
+    ("price_field", "price_value"),
+    [
+        ("current_unit_price", "-1"),
+        ("current_total_value", "-1"),
+    ],
+)
+def test_holding_create_rejects_negative_valuation(
+    price_field: str,
+    price_value: str,
+) -> None:
     data = valid_holding_create_data()
-
-    data["current_total_value"] = "1000"
-    data["valuation_currency"] = None
+    data[price_field] = price_value
 
     with pytest.raises(ValidationError):
         HoldingCreate(**data)
 
 
-def test_holding_create_rejects_negative_current_unit_price():
+def test_holding_create_rejects_inconsistent_valuation() -> None:
     data = valid_holding_create_data()
-    data["current_unit_price"] = "-1"
-
-    with pytest.raises(ValidationError):
-        HoldingCreate(**data)
-
-
-def test_holding_create_rejects_negative_current_total_value():
-    data = valid_holding_create_data()
-    data["current_total_value"] = "-1"
-
-    with pytest.raises(ValidationError):
-        HoldingCreate(**data)
-
-
-# ============================================================
-# UNIT VALIDATION
-# ============================================================
-
-
-def test_holding_create_strips_unit():
-    data = valid_holding_create_data()
-    data["unit"] = " shares "
-
-    holding = HoldingCreate(**data)
-
-    assert holding.unit == "shares"
-
-
-def test_holding_create_rejects_blank_unit():
-    data = valid_holding_create_data()
-    data["unit"] = "   "
+    data["current_total_value"] = "2000"
 
     with pytest.raises(ValidationError):
         HoldingCreate(**data)
 
 
 # ============================================================
-# ENUM VALIDATION
+# VALUATION METHOD
 # ============================================================
 
 
 @pytest.mark.parametrize(
     "valuation_method",
     [
-        "market_price",
-        "user_valued",
-        "calculated",
+        "MARKET_PRICE",
+        "USER_VALUED",
     ],
 )
 def test_holding_create_accepts_valid_valuation_methods(
-    valuation_method,
-):
+    valuation_method: str,
+) -> None:
     data = valid_holding_create_data()
     data["valuation_method"] = valuation_method
 
@@ -285,9 +258,19 @@ def test_holding_create_accepts_valid_valuation_methods(
     assert holding.valuation_method.value == valuation_method
 
 
-def test_holding_create_rejects_invalid_valuation_method():
+@pytest.mark.parametrize(
+    "valuation_method",
+    [
+        "CALCULATED",
+        "MANUAL",
+        "invalid_method",
+    ],
+)
+def test_holding_create_rejects_unsupported_valuation_methods(
+    valuation_method: str,
+) -> None:
     data = valid_holding_create_data()
-    data["valuation_method"] = "invalid_method"
+    data["valuation_method"] = valuation_method
 
     with pytest.raises(ValidationError):
         HoldingCreate(**data)
@@ -298,77 +281,151 @@ def test_holding_create_rejects_invalid_valuation_method():
 # ============================================================
 
 
-def test_holding_update_accepts_valid_data():
+def test_holding_update_accepts_ownership_percentage() -> None:
     holding = HoldingUpdate(
-        quantity="20",
-        unit="BTC",
-        valuation_method="market_price",
-        current_unit_price="100000",
-        valuation_currency="USD",
+        ownership_percentage=Decimal("25.5000"),
     )
 
-    assert holding.quantity == Decimal("20")
-    assert holding.unit == "BTC"
-    assert holding.valuation_method == ValuationMethod.MARKET_PRICE
+    assert holding.ownership_percentage == Decimal("25.5000")
 
 
-def test_holding_update_allows_empty_partial_update():
-    holding = HoldingUpdate()
-
-    assert holding.model_dump(exclude_unset=True) == {}
-
-
-def test_holding_update_rejects_negative_quantity():
+def test_holding_update_rejects_empty_update() -> None:
     with pytest.raises(ValidationError):
-        HoldingUpdate(quantity="-1")
+        HoldingUpdate()
 
 
-def test_holding_update_rejects_negative_current_price():
+@pytest.mark.parametrize(
+    "percentage",
+    [
+        Decimal("-0.01"),
+        Decimal("100.0001"),
+    ],
+)
+def test_holding_update_rejects_invalid_ownership_percentage(
+    percentage: Decimal,
+) -> None:
     with pytest.raises(ValidationError):
-        HoldingUpdate(current_unit_price="-1")
-
-
-def test_holding_update_rejects_negative_total_value():
-    with pytest.raises(ValidationError):
-        HoldingUpdate(current_total_value="-1")
-
-
-def test_holding_update_rejects_invalid_ownership_percentage():
-    with pytest.raises(ValidationError):
-        HoldingUpdate(ownership_percentage="101")
-
-
-def test_holding_update_normalizes_currency():
-    holding = HoldingUpdate(
-        valuation_currency=" ngn ",
-    )
-
-    assert holding.valuation_currency == "NGN"
-
-
-def test_holding_update_rejects_blank_unit():
-    with pytest.raises(ValidationError):
-        HoldingUpdate(unit="   ")
-
-
-# ============================================================
-# PROTECTED HISTORICAL FIELDS
-# ============================================================
+        HoldingUpdate(ownership_percentage=percentage)
 
 
 @pytest.mark.parametrize(
     "field",
     [
+        "quantity",
         "total_cost_basis",
         "cost_basis_per_unit",
         "cost_basis_currency",
         "portfolio_id",
         "asset_id",
+        "unit",
+        "valuation_method",
+        "current_unit_price",
+        "current_total_value",
+        "valuation_currency",
     ],
 )
-def test_holding_update_rejects_protected_fields(field):
+def test_holding_update_rejects_protected_or_unsupported_fields(
+    field: str,
+) -> None:
     with pytest.raises(ValidationError):
-        HoldingUpdate(**{field: 100})
+        HoldingUpdate.model_validate({field: 100})
+
+
+def test_holding_update_rejects_unknown_fields() -> None:
+    with pytest.raises(ValidationError):
+        HoldingUpdate.model_validate(
+            {
+                "ownership_percentage": "25",
+                "unknown_field": "something",
+            }
+        )
+
+
+# ============================================================
+# HOLDING VALUATION UPDATE
+# ============================================================
+
+
+def test_holding_valuation_update_accepts_unit_price() -> None:
+    valuation = HoldingValuationUpdate(
+        current_unit_price=Decimal(175),
+        valuation_currency=" usd ",
+    )
+
+    assert valuation.current_unit_price == Decimal(175)
+    assert valuation.valuation_currency == "USD"
+
+
+def test_holding_valuation_update_accepts_total_value_only() -> None:
+    valuation = HoldingValuationUpdate(
+        current_total_value=Decimal(1750),
+        valuation_currency="NGN",
+    )
+
+    assert valuation.current_total_value == Decimal(1750)
+    assert valuation.current_unit_price is None
+
+
+def test_holding_valuation_update_requires_a_valuation_amount() -> None:
+    with pytest.raises(ValidationError):
+        HoldingValuationUpdate(
+            valuation_currency="USD",
+        )
+
+
+def test_holding_valuation_update_requires_currency() -> None:
+    with pytest.raises(ValidationError):
+        HoldingValuationUpdate(
+            current_unit_price=Decimal(175),
+            valuation_currency=None,
+        )
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "current_unit_price",
+        "current_total_value",
+    ],
+)
+def test_holding_valuation_update_rejects_negative_amounts(
+    field: str,
+) -> None:
+    with pytest.raises(ValidationError):
+        HoldingValuationUpdate.model_validate(
+            {
+                field: "-1",
+                "valuation_currency": "USD",
+            }
+        )
+
+
+def test_holding_valuation_update_normalizes_currency() -> None:
+    valuation = HoldingValuationUpdate(
+        current_total_value=Decimal(1000),
+        valuation_currency=" ngn ",
+    )
+
+    assert valuation.valuation_currency == "NGN"
+
+
+def test_holding_valuation_update_rejects_invalid_currency() -> None:
+    with pytest.raises(ValidationError):
+        HoldingValuationUpdate(
+            current_total_value=Decimal(1000),
+            valuation_currency="123",
+        )
+
+
+def test_holding_valuation_update_rejects_valuation_method() -> None:
+    with pytest.raises(ValidationError):
+        HoldingValuationUpdate.model_validate(
+            {
+                "current_unit_price": "175",
+                "valuation_currency": "USD",
+                "valuation_method": "MARKET_PRICE",
+            }
+        )
 
 
 # ============================================================
@@ -376,63 +433,58 @@ def test_holding_update_rejects_protected_fields(field):
 # ============================================================
 
 
-def test_holding_read_from_attributes():
+def test_holding_read_from_attributes() -> None:
+    now = datetime.now(timezone.utc)
+
     class HoldingObject:
         id = 1
         portfolio_id = 2
         asset_id = 3
-        quantity = Decimal("10")
-        unit = "shares"
+        quantity = Decimal(10)
         ownership_percentage = None
         valuation_method = ValuationMethod.MARKET_PRICE
-        current_unit_price = Decimal("200")
-        current_total_value = Decimal("2000")
-        price_updated_at = datetime.now(timezone.utc)
-
-        total_cost_basis = Decimal("1500")
-        cost_basis_per_unit = Decimal("150")
-
+        current_unit_price = Decimal(200)
+        current_total_value = Decimal(2000)
+        price_updated_at = now
+        total_cost_basis = Decimal(1500)
+        cost_basis_per_unit = Decimal(150)
         cost_basis_currency = "USD"
         valuation_currency = "USD"
-
-        created_at = datetime.now(timezone.utc)
-        updated_at = datetime.now(timezone.utc)
+        created_at = now
+        updated_at = now
 
     holding = HoldingRead.model_validate(HoldingObject())
 
     assert holding.id == 1
     assert holding.portfolio_id == 2
     assert holding.asset_id == 3
-
-    assert holding.quantity == Decimal("10")
-    assert holding.total_cost_basis == Decimal("1500")
-    assert holding.cost_basis_per_unit == Decimal("150")
-
+    assert holding.quantity == Decimal(10)
+    assert holding.total_cost_basis == Decimal(1500)
+    assert holding.cost_basis_per_unit == Decimal(150)
     assert holding.cost_basis_currency == "USD"
     assert holding.valuation_currency == "USD"
 
 
 # ============================================================
-# LIST RESPONSE
+# HOLDING LIST RESPONSE
 # ============================================================
 
 
-def test_holding_list_response():
+def test_holding_list_response() -> None:
     now = datetime.now(timezone.utc)
 
     holding = HoldingRead(
         id=1,
         portfolio_id=1,
         asset_id=1,
-        quantity=Decimal("10"),
-        unit="shares",
+        quantity=Decimal(10),
         ownership_percentage=None,
         valuation_method=ValuationMethod.MARKET_PRICE,
-        current_unit_price=Decimal("200"),
-        current_total_value=Decimal("2000"),
+        current_unit_price=Decimal(200),
+        current_total_value=Decimal(2000),
         price_updated_at=now,
-        total_cost_basis=Decimal("1500"),
-        cost_basis_per_unit=Decimal("150"),
+        total_cost_basis=Decimal(1500),
+        cost_basis_per_unit=Decimal(150),
         cost_basis_currency="USD",
         valuation_currency="USD",
         created_at=now,
@@ -448,22 +500,9 @@ def test_holding_list_response():
     assert len(response.items) == 1
 
 
-def test_holding_list_response_rejects_negative_total():
+def test_holding_list_response_rejects_negative_total() -> None:
     with pytest.raises(ValidationError):
         HoldingListResponse(
             items=[],
             total=-1,
-        )
-
-
-# ============================================================
-# EXTRA FIELDS
-# ============================================================
-
-
-def test_holding_update_rejects_unknown_fields():
-    with pytest.raises(ValidationError):
-        HoldingUpdate(
-            quantity="10",
-            unknown_field="something",
         )

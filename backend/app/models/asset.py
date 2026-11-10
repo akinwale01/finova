@@ -1,3 +1,4 @@
+from backend.app.database.connection import Base
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
@@ -11,8 +12,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-
-from app.database.connection import Base
 
 
 class Asset(Base):

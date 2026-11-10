@@ -1,14 +1,14 @@
 import pytest
 
-from app.exceptions.common import (
+from backend.app.exceptions.common import (
     ConflictError,
     NotFoundError,
     ValidationError,
 )
-from app.models.portfolio import Portfolio
-from app.models.user import User
-from app.schemas.portfolio import PortfolioCreate, PortfolioUpdate
-from app.services.portfolio_service import PortfolioService
+from backend.app.models.portfolio import Portfolio
+from backend.app.models.user import User
+from backend.app.schemas.portfolio import PortfolioCreate, PortfolioUpdate
+from backend.app.services.portfolio_service import PortfolioService
 
 
 def create_test_user(

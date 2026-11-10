@@ -18,21 +18,21 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.exceptions import (
+from backend.app.exceptions import (
     AuthorizationError,
     ConflictError,
     NotFoundError,
     ValidationError,
 )
-from app.models.account import Account
-from app.models.user import User
-from app.schemas.account import (
+from backend.app.models.account import Account
+from backend.app.models.user import User
+from backend.app.schemas.account import (
     AccountCreate,
     AccountSyncUpdate,
     AccountType,
     AccountUpdate,
 )
-from app.services.account_service import AccountService
+from backend.app.services.account_service import AccountService
 
 
 # =============================================================

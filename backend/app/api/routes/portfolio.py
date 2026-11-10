@@ -1,22 +1,22 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from app.schemas.portfolio import (
+from backend.app.schemas.portfolio import (
     PortfolioCreate,
     PortfolioResponse,
     PortfolioUpdate,
 )
 
 # Used to get the database session
-from app.database.connection import get_db
+from backend.app.database.connection import get_db
 
 # Used to identify the authenticated user from the JWT
-from app.auth.security import get_current_user
+from backend.app.auth.security import get_current_user
 
 # This is the Database model
-from app.models.portfolio import Portfolio
+from backend.app.models.portfolio import Portfolio
 
 # Pydantic schemas
-from app.schemas.portfolio import PortfolioCreate, PortfolioResponse
+from backend.app.schemas.portfolio import PortfolioCreate, PortfolioResponse
 
 
 # Create the router for portfolio-related endpoints

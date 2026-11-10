@@ -1,5 +1,5 @@
 from datetime import datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from enum import Enum
 
 from pydantic import (
@@ -10,21 +10,16 @@ from pydantic import (
     model_validator,
 )
 
-
 # ============================================================
 # ENUMS
 # ============================================================
 
 
 class ValuationMethod(str, Enum):
-    """
-    Defines how Finova determines the current valuation
-    of a holding.
-    """
+    """How Finova obtains a holding's current valuation."""
 
-    MARKET_PRICE = "market_price"
-    USER_VALUED = "user_valued"
-    CALCULATED = "calculated"
+    MARKET_PRICE = "MARKET_PRICE"
+    USER_VALUED = "USER_VALUED"
 
 
 # ============================================================
@@ -32,28 +27,36 @@ class ValuationMethod(str, Enum):
 # ============================================================
 
 
-class HoldingBase(BaseModel):
-    """
-    Fields shared by Holding creation and valuation-related
-    operations.
+def normalize_currency(value: object) -> str | None:
+    if value is None:
+        return None
 
-    Historical acquisition data remains separate from current
-    valuation data.
-    """
+    if not isinstance(value, str):
+        # Pydantic validators use ValueError to produce structured ValidationError.
+        raise ValueError("Currency must be a string.")  # noqa: TRY004
+
+    value = value.strip().upper()
+
+    if len(value) != 3 or not value.isalpha():
+        raise ValueError("Currency must be a three-letter currency code.")
+
+    return value
+
+
+class HoldingBase(BaseModel):
+    """Common fields used when establishing a holding position."""
+
+    model_config = ConfigDict(extra="forbid")
 
     quantity: Decimal = Field(
         ...,
+        gt=0,
         max_digits=20,
         decimal_places=8,
-        ge=0,
-        description="Current quantity of the asset owned.",
-    )
-
-    unit: str = Field(
-        ...,
-        min_length=1,
-        max_length=50,
-        description="Unit used to describe the quantity.",
+        description=(
+            "Current quantity, expressed in the canonical unit "
+            "defined by the associated Asset."
+        ),
     )
 
     ownership_percentage: Decimal | None = Field(
@@ -62,12 +65,12 @@ class HoldingBase(BaseModel):
         decimal_places=4,
         ge=0,
         le=100,
-        description="Ownership percentage for ownership-based assets.",
+        description="Ownership percentage for applicable assets.",
     )
 
     valuation_method: ValuationMethod = Field(
         ...,
-        description="Method used to determine the current valuation.",
+        description="Method used to obtain the current valuation.",
     )
 
     current_unit_price: Decimal | None = Field(
@@ -75,7 +78,6 @@ class HoldingBase(BaseModel):
         max_digits=20,
         decimal_places=8,
         ge=0,
-        description="Current value of one unit of the asset.",
     )
 
     current_total_value: Decimal | None = Field(
@@ -83,87 +85,44 @@ class HoldingBase(BaseModel):
         max_digits=20,
         decimal_places=8,
         ge=0,
-        description="Current total value of the holding.",
     )
 
     valuation_currency: str | None = Field(
         default=None,
         min_length=3,
         max_length=3,
-        description="Currency in which the current valuation is expressed.",
     )
-
-    @field_validator("unit")
-    @classmethod
-    def validate_unit(cls, value: str) -> str:
-        """
-        Normalize the quantity unit while rejecting blank values.
-        """
-
-        value = value.strip()
-
-        if not value:
-            raise ValueError("unit must not be blank")
-
-        return value
 
     @field_validator("valuation_currency", mode="before")
     @classmethod
-    def validate_valuation_currency(
-        cls,
-        value: object,
-    ) -> str | None:
-        """
-        Normalize and validate valuation currency before Pydantic
-        applies the exact three-character length constraints.
-        """
-
-        if value is None:
-            return None
-
-        if not isinstance(value, str):
-            raise TypeError(
-                "valuation_currency must be a string"
-            )
-
-        value = value.strip().upper()
-
-        if len(value) != 3 or not value.isalpha():
-            raise ValueError(
-                "valuation_currency must be a valid 3-letter currency code"
-            )
-
-        return value
+    def validate_valuation_currency(cls, value: object) -> str | None:
+        return normalize_currency(value)
 
     @model_validator(mode="after")
     def validate_valuation(self):
-        """
-        Ensure valuation fields remain internally consistent.
+        """Require currency whenever a valuation amount is supplied."""
 
-        A holding may exist before a current market valuation is
-        available.
+        has_valuation = (
+            self.current_unit_price is not None
+            or self.current_total_value is not None
+        )
 
-        However, whenever a current unit price or total value is
-        provided, a valuation currency must also be provided.
-        """
+        if has_valuation and self.valuation_currency is None:
+            raise ValueError(
+                "valuation_currency is required when a valuation is supplied."
+            )
 
         if (
             self.current_unit_price is not None
-            and self.valuation_currency is None
+            and self.current_total_value is not None
         ):
-            raise ValueError(
-                "valuation_currency is required when "
-                "current_unit_price is provided"
-            )
+            expected_total = self.quantity * self.current_unit_price
 
-        if (
-            self.current_total_value is not None
-            and self.valuation_currency is None
-        ):
-            raise ValueError(
-                "valuation_currency is required when "
-                "current_total_value is provided"
-            )
+            if self.current_total_value != expected_total:
+                raise ValueError(
+                    "current_total_value must equal quantity multiplied "
+                    "by current_unit_price."
+                )
 
         return self
 
@@ -175,100 +134,80 @@ class HoldingBase(BaseModel):
 
 class HoldingCreate(HoldingBase):
     """
-    Schema used when creating a new Holding.
+    Schema for an internally controlled holding-creation workflow.
 
-    Historical acquisition information is stored separately from
-    current/live valuation information.
+    This is intended for transaction processing, opening balances,
+    or imports—not unrestricted ordinary CRUD creation.
     """
 
-    portfolio_id: int = Field(
-        ...,
-        gt=0,
-        description="Portfolio that owns the holding.",
-    )
-
-    asset_id: int = Field(
-        ...,
-        gt=0,
-        description="Asset represented by the holding.",
-    )
+    portfolio_id: int = Field(..., gt=0)
+    asset_id: int = Field(..., gt=0)
 
     total_cost_basis: Decimal = Field(
         ...,
+        ge=0,
         max_digits=20,
         decimal_places=8,
-        ge=0,
-        description="Total historical acquisition cost.",
     )
 
     cost_basis_per_unit: Decimal = Field(
         ...,
+        ge=0,
         max_digits=20,
         decimal_places=8,
-        ge=0,
-        description="Historical acquisition cost per unit.",
     )
 
     cost_basis_currency: str = Field(
         ...,
         min_length=3,
         max_length=3,
-        description="Currency used for historical cost basis.",
     )
 
     @field_validator("cost_basis_currency", mode="before")
     @classmethod
-    def validate_cost_basis_currency(cls, value: Any) -> str:
-        """
-        Normalize and validate cost-basis currency before Pydantic
-        applies the exact three-character length constraints.
-        """
+    def validate_cost_basis_currency(cls, value: object) -> str:
+        normalized = normalize_currency(value)
 
-        if not isinstance(value, str):
-            raise TypeError("cost_basis_currency must be a string")
+        if normalized is None:
+            raise ValueError("cost_basis_currency is required.")
 
-        value = value.strip().upper()
+        return normalized
 
-        if len(value) != 3 or not value.isalpha():
+    @model_validator(mode="after")
+    def validate_cost_basis(self):
+        expected_per_unit = (
+            self.total_cost_basis / self.quantity
+        ).quantize(
+            Decimal("0.00000001"),
+            rounding=ROUND_HALF_UP,
+        )
+
+        if self.cost_basis_per_unit != expected_per_unit:
             raise ValueError(
-                "cost_basis_currency must be a valid 3-letter currency code"
+                "cost_basis_per_unit must equal total_cost_basis "
+                "divided by quantity, rounded to 8 decimal places."
             )
 
-        return value
+        return self
 
 
 # ============================================================
-# UPDATE
+# CONTROLLED OWNERSHIP UPDATE
 # ============================================================
 
 
 class HoldingUpdate(BaseModel):
     """
-    Schema used to update an existing Holding.
+    Controlled update for ownership percentage only.
 
-    Historical cost-basis fields are deliberately excluded.
+    Quantity, asset identity, portfolio identity, cost basis,
+    and valuation are deliberately excluded.
 
-    A normal holding update must never overwrite historical
-    acquisition information simply because market valuation
-    changes.
+    An explicit null can clear an existing ownership percentage.
+    An empty payload is rejected.
     """
 
-    model_config = ConfigDict(
-        extra="forbid",
-    )
-
-    quantity: Decimal | None = Field(
-        default=None,
-        max_digits=20,
-        decimal_places=8,
-        ge=0,
-    )
-
-    unit: str | None = Field(
-        default=None,
-        min_length=1,
-        max_length=50,
-    )
+    model_config = ConfigDict(extra="forbid")
 
     ownership_percentage: Decimal | None = Field(
         default=None,
@@ -278,20 +217,45 @@ class HoldingUpdate(BaseModel):
         le=100,
     )
 
-    valuation_method: ValuationMethod | None = None
+    @model_validator(mode="after")
+    def require_ownership_change(self):
+        if "ownership_percentage" not in self.model_fields_set:
+            raise ValueError(
+                "Provide ownership_percentage to update the holding."
+            )
+
+        return self
+
+
+# ============================================================
+# MANUAL VALUATION UPDATE
+# ============================================================
+
+
+class HoldingValuationUpdate(BaseModel):
+    """
+    Update the current manual valuation of an existing holding.
+
+    Does not permit changes to quantity, ownership, cost basis,
+    asset identity, portfolio identity, or valuation method.
+
+    The service determines the method as USER_VALUED.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     current_unit_price: Decimal | None = Field(
         default=None,
+        ge=0,
         max_digits=20,
         decimal_places=8,
-        ge=0,
     )
 
     current_total_value: Decimal | None = Field(
         default=None,
+        ge=0,
         max_digits=20,
         decimal_places=8,
-        ge=0,
     )
 
     valuation_currency: str | None = Field(
@@ -300,50 +264,29 @@ class HoldingUpdate(BaseModel):
         max_length=3,
     )
 
-    @field_validator("unit")
-    @classmethod
-    def validate_unit(cls, value: str | None) -> str | None:
-        """
-        Normalize the unit when supplied.
-        """
-
-        if value is None:
-            return None
-
-        value = value.strip()
-
-        if not value:
-            raise ValueError("unit must not be blank")
-
-        return value
-
     @field_validator("valuation_currency", mode="before")
     @classmethod
-    def validate_valuation_currency(
-        cls,
-        value: object | None,
-    ) -> str | None:
-        """
-        Normalize and validate valuation currency before Pydantic
-        applies the exact three-character length constraints.
-        """
+    def validate_valuation_currency(cls, value: object) -> str | None:
+        return normalize_currency(value)
 
-        if value is None:
-            return None
+    @model_validator(mode="after")
+    def validate_valuation_update(self):
+        has_unit_price = self.current_unit_price is not None
+        has_total_value = self.current_total_value is not None
 
-        if not isinstance(value, str):
-            raise TypeError(
-                "valuation_currency must be a string"
-            )
-
-        value = value.strip().upper()
-
-        if len(value) != 3 or not value.isalpha():
+        # An actual valuation amount must be supplied.
+        if not has_unit_price and not has_total_value:
             raise ValueError(
-                "valuation_currency must be a valid 3-letter currency code"
+                "Provide either current_unit_price or current_total_value."
             )
 
-        return value
+        # Every valuation must identify its currency.
+        if self.valuation_currency is None:
+            raise ValueError(
+                "valuation_currency is required when providing a valuation."
+            )
+
+        return self
 
 
 # ============================================================
@@ -352,47 +295,30 @@ class HoldingUpdate(BaseModel):
 
 
 class HoldingRead(BaseModel):
-    """
-    Public API representation of a Holding.
+    """Public API representation of a holding."""
 
-    Contains both historical acquisition information and current
-    valuation information.
-    """
-
-    model_config = ConfigDict(
-        from_attributes=True,
-    )
+    model_config = ConfigDict(from_attributes=True)
 
     id: int
-
     portfolio_id: int
-
     asset_id: int
 
+    # Quantity is always expressed in Asset.unit.
     quantity: Decimal
-
-    unit: str
 
     ownership_percentage: Decimal | None
 
     valuation_method: ValuationMethod
-
     current_unit_price: Decimal | None
-
     current_total_value: Decimal | None
-
+    valuation_currency: str | None
     price_updated_at: datetime | None
 
     total_cost_basis: Decimal
-
     cost_basis_per_unit: Decimal
-
     cost_basis_currency: str
 
-    valuation_currency: str | None
-
     created_at: datetime
-
     updated_at: datetime
 
 
@@ -402,13 +328,7 @@ class HoldingRead(BaseModel):
 
 
 class HoldingListResponse(BaseModel):
-    """
-    Standard collection response for holdings.
-    """
+    """Standard paginated/list response for holdings."""
 
     items: list[HoldingRead]
-
-    total: int = Field(
-        ...,
-        ge=0,
-    )
+    total: int = Field(..., ge=0)

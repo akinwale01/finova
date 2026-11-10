@@ -2,8 +2,8 @@
 Public exception exports for Finova.
 """
 
-from app.exceptions.base import FinovaError
-from app.exceptions.common import (
+from backend.app.exceptions.base import FinovaError
+from backend.app.exceptions.common import (
     AuthorizationError,
     BusinessRuleError,
     ConflictError,

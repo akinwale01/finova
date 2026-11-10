@@ -3,21 +3,21 @@ from __future__ import annotations
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.exceptions import (
+from backend.app.exceptions import (
     AuthorizationError,
     ConflictError,
     FinovaError,
     NotFoundError,
     ValidationError,
 )
-from app.models.account import Account
-from app.models.user import User
-from app.schemas.account import (
+from backend.app.models.account import Account
+from backend.app.models.user import User
+from backend.app.schemas.account import (
     AccountCreate,
     AccountSyncUpdate,
     AccountUpdate,
 )
-from app.services.base_service import BaseService
+from backend.app.services.base_service import BaseService
 
 
 class AccountService(BaseService[Account]):

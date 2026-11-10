@@ -4,13 +4,13 @@ from decimal import Decimal
 import pytest
 from pydantic import ValidationError as PydanticValidationError
 
-from app.exceptions.common import ConflictError, NotFoundError, ValidationError
-from app.models.account import Account
-from app.models.asset import Asset
-from app.models.portfolio import Portfolio
-from app.models.transaction import TransactionStatus, TransactionType
-from app.schemas.transaction import TransactionCreate, TransactionUpdate
-from app.services.transaction_service import TransactionService
+from backend.app.exceptions.common import ConflictError, NotFoundError, ValidationError
+from backend.app.models.account import Account
+from backend.app.models.asset import Asset
+from backend.app.models.portfolio import Portfolio
+from backend.app.models.transaction import TransactionStatus, TransactionType
+from backend.app.schemas.transaction import TransactionCreate, TransactionUpdate
+from backend.app.services.transaction_service import TransactionService
 
 
 # ---------------------------------------------------------------------------
@@ -19,7 +19,7 @@ from app.services.transaction_service import TransactionService
 
 
 def create_user(db, email="user@example.com"):
-    from app.models.user import User
+    from backend.app.models.user import User
 
     user = User(
         email=email,

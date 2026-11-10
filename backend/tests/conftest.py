@@ -1,12 +1,41 @@
 import pytest
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.core.config import DATABASE_URL
+from backend.app.core.config import DATABASE_URL, TEST_DATABASE_URL
+
+
+# Never allow integration tests to fall back to the development database.
+if not TEST_DATABASE_URL:
+    raise RuntimeError(
+        "TEST_DATABASE_URL is not configured. "
+        "Refusing to run integration tests."
+    )
+
+test_url = make_url(TEST_DATABASE_URL)
+development_url = make_url(DATABASE_URL)
+
+# Prevent tests from connecting to the same PostgreSQL database
+# used by the application.
+if (
+    test_url.host == development_url.host
+    and test_url.port == development_url.port
+    and test_url.database == development_url.database
+):
+    raise RuntimeError(
+        "TEST_DATABASE_URL points to the development database. "
+        "Use a separate database for integration tests."
+    )
+
+if not test_url.drivername.startswith("postgresql"):
+    raise RuntimeError(
+        "Integration tests must use PostgreSQL."
+    )
 
 
 engine = create_engine(
-    DATABASE_URL,
+    TEST_DATABASE_URL,
     pool_pre_ping=True,
 )
 
@@ -15,6 +44,7 @@ TestingSessionLocal = sessionmaker(
     autoflush=False,
     bind=engine,
 )
+
 
 
 def clean_test_data(session: Session) -> None:

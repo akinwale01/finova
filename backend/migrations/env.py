@@ -1,16 +1,12 @@
 from logging.config import fileConfig
 
+# Import the models package so every model is registered
+# in Base.metadata before Alembic performs autogeneration.
+import backend.app.models  # noqa: F401
 from alembic import context
+from backend.app.core.config import DATABASE_URL
+from backend.app.database.connection import Base
 from sqlalchemy import create_engine, pool
-
-from app.core.config import DATABASE_URL
-from app.database.connection import Base
-
-# Import models so SQLAlchemy registers their tables
-# in Base.metadata before Alembic runs autogenerate.
-from app.models.user import User
-from app.models.portfolio import Portfolio
-
 
 # =========================================================
 # ALEMBIC CONFIGURATION
@@ -20,7 +16,7 @@ config = context.config
 
 
 # =========================================================
-# LOGGING
+# LOGGING CONFIGURATION
 # =========================================================
 
 if config.config_file_name is not None:
@@ -28,11 +24,22 @@ if config.config_file_name is not None:
 
 
 # =========================================================
-# SQLALCHEMY METADATA
+# DATABASE CONFIGURATION
 # =========================================================
 
-# Alembic uses this metadata to compare the current
-# SQLAlchemy models against the PostgreSQL database.
+if not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL is not configured. "
+        "Check your environment variables before running Alembic."
+    )
+
+
+# =========================================================
+# MODEL METADATA
+# =========================================================
+
+# Alembic compares this metadata with the existing database
+# schema when generating migration revisions.
 target_metadata = Base.metadata
 
 
@@ -41,7 +48,7 @@ target_metadata = Base.metadata
 # =========================================================
 
 def run_migrations_offline() -> None:
-    """Run migrations in offline mode."""
+    """Run migrations without establishing a database connection."""
 
     context.configure(
         url=DATABASE_URL,
@@ -53,30 +60,37 @@ def run_migrations_offline() -> None:
 
     with context.begin_transaction():
         context.run_migrations()
+
+
 # =========================================================
 # ONLINE MIGRATIONS
 # =========================================================
 
 def run_migrations_online() -> None:
-    """Run migrations in online mode."""
+    """Run migrations using an active database connection."""
 
     connectable = create_engine(
         DATABASE_URL,
         poolclass=pool.NullPool,
+        pool_pre_ping=True,
     )
 
-    with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=target_metadata,
-            compare_server_default=False,
-        )
+    try:
+        with connectable.connect() as connection:
+            context.configure(
+                connection=connection,
+                target_metadata=target_metadata,
+                compare_server_default=False,
+            )
 
-        with context.begin_transaction():
-            context.run_migrations()
+            with context.begin_transaction():
+                context.run_migrations()
+    finally:
+        connectable.dispose()
+
 
 # =========================================================
-# RUN MIGRATION
+# EXECUTE MIGRATIONS
 # =========================================================
 
 if context.is_offline_mode():

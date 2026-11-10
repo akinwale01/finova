@@ -1,3 +1,4 @@
+from backend.app.database.connection import Base
 from sqlalchemy import (
     Boolean,
     Column,
@@ -8,8 +9,6 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.orm import relationship, validates
-
-from app.database.connection import Base
 
 
 class User(Base):

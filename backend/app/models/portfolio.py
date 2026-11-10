@@ -1,17 +1,16 @@
+from backend.app.database.connection import Base
 from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
     ForeignKey,
-    Integer,
     Index,
+    Integer,
     String,
     text,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-
-from app.database.connection import Base
 
 
 class Portfolio(Base):

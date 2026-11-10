@@ -1,10 +1,10 @@
 from fastapi import FastAPI
 
 # Import the authentication router
-from app.api.routes.auth import router as auth_router
+from backend.app.api.routes.auth import router as auth_router
 
 # Import the portfolio router
-from app.api.routes.portfolio import router as portfolio_router
+from backend.app.api.routes.portfolio import router as portfolio_router
 
 
 # Create the FastAPI application

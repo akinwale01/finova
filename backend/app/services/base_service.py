@@ -5,7 +5,9 @@ from typing import Generic, TypeVar
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.exceptions import FinovaError, NotFoundError
+from backend.app.exceptions import FinovaError, NotFoundError
+
+
 
 
 ModelType = TypeVar("ModelType")

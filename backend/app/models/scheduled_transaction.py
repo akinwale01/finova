@@ -1,5 +1,6 @@
 from enum import Enum
 
+from backend.app.database.connection import Base
 from sqlalchemy import (
     Boolean,
     Column,
@@ -13,9 +14,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import expression, func
-
-from app.database.connection import Base
-
 
 # ============================================================
 # ENUMS

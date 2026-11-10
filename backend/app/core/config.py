@@ -10,6 +10,7 @@ load_dotenv()
 # DATABASE
 # =========================================================
 
+# Used by the FastAPI application.
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
@@ -17,6 +18,10 @@ if not DATABASE_URL:
         "DATABASE_URL is not configured. "
         "Please set DATABASE_URL in your .env file."
     )
+
+# Used exclusively by PostgreSQL integration tests.
+# It is optional here so the application can run without test configuration.
+TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 
 
 # =========================================================
